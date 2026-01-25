@@ -7,46 +7,74 @@
 
 import Foundation
 
-
 let tmdbBaseUrl = APIConfig.shared?.tmdbBaseURL
 let tmdbApiKey = APIConfig.shared?.tmdbAPIKey
 
 struct DataFetcher {
-    func fetchTitles(for media:String) async throws -> [Title] {
-        guard let baseUrl = tmdbBaseUrl else {
-            throw NetworkError.missingConfig
-        }
-        
-        guard let apiKey = tmdbApiKey else {
-            throw NetworkError.missingConfig
-        }
-        
-        guard let fetchingTitlesUrl = URL(string: baseUrl)?
-            .appending(path: "3/trending/\(media)/day")
-            .appending(queryItems: [
-                URLQueryItem(name: "api_key", value: apiKey)
-            ]) else {
+    func fetchTitles(for media: String, by type: String) async throws -> [Title]
+    {
+        guard let fetchingTitlesUrl = try buildURL(media: media, type: type) else {
             throw NetworkError.urlBuildFailed
         }
-        
+
+    
         print(fetchingTitlesUrl)
-        
-        let (data,urlResponse) = try await URLSession.shared.data(from: fetchingTitlesUrl)
-        
-        guard let response = urlResponse as? HTTPURLResponse, response.statusCode == 200 else {
+
+        let (data, urlResponse) = try await URLSession.shared.data(
+            from: fetchingTitlesUrl
+        )
+
+        guard let response = urlResponse as? HTTPURLResponse,
+            response.statusCode == 200
+        else {
             throw NetworkError.badURLResponse(
-                underlyingError:NSError(
+                underlyingError: NSError(
                     domain: "DataFetcher",
                     code: (urlResponse as? HTTPURLResponse)?.statusCode ?? -1,
-                    userInfo: [NSLocalizedDescriptionKey:"Invalid HTTP response"]))
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "Invalid HTTP response"
+                    ]
+                )
+            )
         }
-        
+
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        var titles =  try decoder.decode(APIObject.self, from: data).results
+        var titles = try decoder.decode(APIObject.self, from: data).results
         Constants.addPosterPath(to: &titles)
         return titles
     }
-    
-    
+
+    private func buildURL(media: String, type: String) throws -> URL? {
+        guard let baseUrl = tmdbBaseUrl else {
+            throw NetworkError.missingConfig
+        }
+
+        guard let apiKey = tmdbApiKey else {
+            throw NetworkError.missingConfig
+        }
+
+        var path: String
+
+        if type == "trending" {
+            path = "3/\(type)/\(media)/day"
+        } else if type == "top_rated" {
+            path = "3/\(media)/top_rated"
+        } else {
+            throw NetworkError.urlBuildFailed
+        }
+        
+        guard
+            let url = URL(string: baseUrl)?
+                .appending(path: path)
+                .appending(queryItems: [
+                    URLQueryItem(name: "api_key", value: apiKey)
+                ])
+        else {
+            throw NetworkError.urlBuildFailed
+        }
+        
+        return url
+    }
+
 }
